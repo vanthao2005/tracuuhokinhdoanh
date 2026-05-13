@@ -6,6 +6,7 @@
 <title>Tra cứu Hộ Kinh Doanh</title>
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&family=Merriweather:wght@700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
   :root {
     --red: #c8002d;
@@ -1156,6 +1157,39 @@
       font-size: 12px;
     }
   }
+
+  /* ===== ONLINE COUNTER ===== */
+  .online-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 20px;
+    padding: 5px 13px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.85);
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .online-dot {
+    width: 8px;
+    height: 8px;
+    background: #4ade80;
+    border-radius: 50%;
+    flex-shrink: 0;
+    animation: pulse-dot 2s infinite;
+  }
+  @keyframes pulse-dot {
+    0%   { box-shadow: 0 0 0 0 rgba(74,222,128,0.6); }
+    70%  { box-shadow: 0 0 0 6px rgba(74,222,128,0); }
+    100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
+  }
+  @media(max-width:768px) {
+    .online-text { display: none; }
+    .online-badge { padding: 5px 10px; gap: 5px; }
+  }
 </style>
 </head>
 <body>
@@ -1192,8 +1226,14 @@
 </div>
 
 <!-- NAV -->
-<div class="nav-bar">
+<div class="nav-bar" style="align-items:center;">
   <button class="nav-btn active" onclick="showView('search')">🔍 Tra cứu hộ kinh doanh</button>
+  <div style="margin-left:auto;display:flex;align-items:center;padding:0 16px;">
+    <div class="online-badge" id="online-badge">
+      <span class="online-dot"></span>
+      <span id="online-count">—</span><span class="online-text"> đang online</span>
+    </div>
+  </div>
 </div>
 
 <!-- VIEW: SEARCH -->
@@ -1869,12 +1909,50 @@ async function pushToGitHub(user, repo, token, newDB) {
   await pushFile('index.html', toBase64(htmlContent), shaHtml, commitMsg);
 }
 
+// ===== SUPABASE REALTIME — ĐẾM NGƯỜI ONLINE =====
+const _sb = supabase.createClient(
+  'https://fmkwyidpfovcvnspthnz.supabase.co',
+  'sb_publishable_4qslnevxnQhbzZT6YZJ5Vw_gcd-KCmf'
+);
+
+function initOnlineCounter() {
+  try {
+    const userId = 'u_' + Math.random().toString(36).substr(2, 9);
+    const channel = _sb.channel('tracuu-hkd-presence', {
+      config: { presence: { key: userId } }
+    });
+    const updateCount = () => {
+      const n = Object.keys(channel.presenceState()).length;
+      const el = document.getElementById('online-count');
+      if (el) el.textContent = n.toLocaleString('vi-VN');
+    };
+    channel
+      .on('presence', { event: 'sync' },  updateCount)
+      .on('presence', { event: 'join' },  updateCount)
+      .on('presence', { event: 'leave' }, updateCount)
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ user_id: userId, at: new Date().toISOString() });
+        }
+      });
+    window.addEventListener('beforeunload', () => {
+      channel.untrack();
+      channel.unsubscribe();
+    });
+  } catch(e) {
+    console.warn('Realtime không khả dụng:', e);
+    const badge = document.getElementById('online-badge');
+    if (badge) badge.style.display = 'none';
+  }
+}
+
 // ===== KHỞI ĐỘNG =====
 checkRoute();
 // Username và repo mặc định được điền trong loadGithubConfig()
 
 loadFromSheets();
 if (document.getElementById('gh-user')) loadGithubConfig();
+initOnlineCounter();
 
 // Gắn sự kiện input với debounce cho 4 ô tìm kiếm
 ['q-mst','q-cccd','q-name','q-phone'].forEach(id => {
